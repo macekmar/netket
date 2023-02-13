@@ -140,6 +140,22 @@ def to_matrix(hilbert, machine, params, normalize=True):
     return rho
 
 
+def to_matrix_povm(hilbert, machine, params, normalize=True):
+    if not hilbert.is_indexable:
+        raise RuntimeError("The hilbert space is not indexable")
+
+    pa = to_array(hilbert, machine, params, normalize=False)
+
+    Mn = reduce(jnp.kron, [hilbert.M for _ in range(hilbert.size)])
+    Tinvn = reduce(jnp.kron, [hilbert.Tinv for _ in range(hilbert.size)])
+    rho = jnp.einsum("a,ab,bij->ij", pa, Tinvn, Mn)
+    if normalize:
+        trace = jnp.trace(rho)
+        rho /= trace
+
+    return rho
+
+
 # TODO: Deprecate: remove
 def update_dense_symm(params, names=["dense_symm", "Dense"]):
     """Updates DenseSymm kernels in pre-PR#1030 parameter pytrees to the new

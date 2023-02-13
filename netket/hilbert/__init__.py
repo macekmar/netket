@@ -24,6 +24,7 @@ from .spin import Spin
 from .fock import Fock
 from .qubit import Qubit
 from .particle import Particle
+from .povm import POVMTethra
 
 from .tensor_hilbert import TensorHilbert
 

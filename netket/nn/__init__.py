@@ -54,6 +54,7 @@ from .initializers import zeros, ones
 from .utils import (
     to_array,
     to_matrix,
+    to_matrix_povm,
     split_array_mpi,
     update_dense_symm,
     binary_encoding,

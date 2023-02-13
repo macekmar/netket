@@ -20,7 +20,7 @@ from .base import (
     expect_and_forces,
 )
 
-from .mc import MCState, MCMixedState, get_local_kernel_arguments, get_local_kernel
+from .mc import MCState, MCMixedState, MCPOVMState, get_local_kernel_arguments, get_local_kernel
 from .exact import ExactState
 
 # TODO: this is deprecated in favour of netket.experimental.vqs
