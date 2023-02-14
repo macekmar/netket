@@ -54,10 +54,6 @@ class AbstractPOVM(HomogeneousHilbert):
     def __repr__(self):
         return f"{type(self).__name__}(N={self.size})"
 
-    @property
-    def _attrs(self):
-        return (self.size,)
-
 
 class POVMTethra(AbstractPOVM):
     def __init__(self, N: int = 1, theta: float = 0.0, phi: float = 0.0):
