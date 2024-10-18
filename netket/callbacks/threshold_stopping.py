@@ -19,7 +19,7 @@ import numpy as np
 from netket.utils import struct
 
 
-class ConvergenceStopping(struct.Pytree, mutable=True):
+class ThresholdStopping(struct.Pytree, mutable=True):
     """A simple callback to stop the optimisation when the monitored quantity gets
     below a certain threshold for at least `patience` steps.
     """
@@ -99,3 +99,15 @@ class ConvergenceStopping(struct.Pytree, mutable=True):
             return False
 
         return True
+
+
+def ConvergenceStopping(*args, **kwargs):
+    from netket.utils import warn_deprecation
+
+    warn_deprecation(
+        """'ConvergenceStopping' was renamed to 'ThresholdStopping'.
+
+        'Convergence' is dubious since 'EarlyStopping' is monitoring lack of convergence.
+        'ThresholdStopping' monitors if we have dropped below the threshold."""
+    )
+    return ThresholdStopping(*args, **kwargs)

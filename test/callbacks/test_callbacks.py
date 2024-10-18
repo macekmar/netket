@@ -240,9 +240,9 @@ def test_invalid_loss_stopping_correct_interval():
     assert cb._last_valid_iter == 2
 
 
-def test_convergence_stopping():
+def test_threshold_stopping():
     loss_values = [10] + [9] * 12 + [1] * 4
-    es = nk.callbacks.ConvergenceStopping(target=9.0, patience=10, smoothing_window=1)
+    es = nk.callbacks.ThresholdStopping(target=9.0, patience=10, smoothing_window=1)
     driver = DummyDriver()
     for step in range(len(loss_values)):
         print(es)
@@ -251,7 +251,7 @@ def test_convergence_stopping():
 
     assert step == 11
 
-    es = nk.callbacks.ConvergenceStopping(target=9.0, patience=10, smoothing_window=3)
+    es = nk.callbacks.ThresholdStopping(target=9.0, patience=10, smoothing_window=3)
     driver = DummyDriver()
     for step in range(len(loss_values)):
         print(es)
