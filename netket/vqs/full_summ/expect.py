@@ -121,6 +121,7 @@ def expect_and_forces_fullsum(
     σ = split_array_mpi(vstate._all_states)
 
     Ō_grad_local, new_model_state = _forces(
+        vstate.chunk_size,
         vstate._apply_fun,
         mutable,
         vstate.parameters,
@@ -131,14 +132,14 @@ def expect_and_forces_fullsum(
         expval_O,
     )
 
-    Ō_grad = jax.tree_map(
-        lambda x: jnp.sum(mpi.mpi_allgather_jax(x)[0], axis=0), Ō_grad_local
-    )
+    # Ō_grad = jax.tree_map(
+    #     lambda x: jnp.sum(mpi.mpi_allgather_jax(x)[0], axis=0), Ō_grad_local
+    # )
+    Ō_grad, _ = mpi.mpi_sum_jax(Ō_grad_local)
 
     # print(Ō_grad)
     # norm = jax.tree_util.tree_reduce(lambda x, y: x + jnp.linalg.norm(y), Ō_grad, 0)
     # print(norm)
-    # print(jax.tree_map(lambda x: x.shape, Ō_grad_local))
     # print(jax.tree_map(lambda x: x.shape, Ō_grad))
 
     if mutable is not False:
@@ -147,8 +148,9 @@ def expect_and_forces_fullsum(
     return expval_O, Ō_grad
 
 
-@partial(jax.jit, static_argnums=(0, 1))
+@partial(jax.jit, static_argnums=(0, 1, 2))
 def _forces(
+    chunk_size: int,
     model_apply_fun: Callable,
     mutable: CollectionFilter,
     parameters: PyTree,
@@ -164,15 +166,31 @@ def _forces(
 
     # print("DeltaO", ΔOΨ.shape)
     # print("Sigma", σ.shape)
+    if mutable is False:
+        vjp_fun_chunked = nkjax.vjp_chunked(
+            lambda w, σ: model_apply_fun({"params": w, **model_state}, σ),
+            parameters,
+            σ,
+            conjugate=True,
+            chunk_size=chunk_size,
+            chunk_argnums=1,
+            nondiff_argnums=1,
+        )
+        # _, vjp_fun, *new_model_state = nkjax.vjp(
+        #     lambda w: model_apply_fun({"params": w, **model_state}, σ, mutable=mutable),
+        #     parameters,
+        #     conjugate=True,
+        #     has_aux=is_mutable,
+        # )
+        new_model_state = None
+    else:
+        raise NotImplementedError
 
-    _, vjp_fun, *new_model_state = nkjax.vjp(
-        lambda w: model_apply_fun({"params": w, **model_state}, σ, mutable=mutable),
-        parameters,
-        conjugate=True,
-        has_aux=is_mutable,
-    )
+    #     jacobians = vmap_chunked(
+    #     jacobian_fun, in_axes=(None, None, 0), chunk_size=chunk_size
+    # )(Partial(f), params, samples)
 
-    Ō_grad_local = vjp_fun(ΔOΨ)[0]
+    Ō_grad_local = vjp_fun_chunked(ΔOΨ)[0]
 
     new_model_state = new_model_state[0] if is_mutable else None
 
