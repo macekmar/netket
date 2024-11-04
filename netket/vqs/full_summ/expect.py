@@ -24,6 +24,8 @@ from netket.operator import DiscreteOperator, Squared
 from netket.stats import Stats
 from netket.utils.types import PyTree
 from netket.utils.dispatch import dispatch
+from netket.nn import split_array_mpi
+from netket.utils import mpi
 
 from netket.vqs import expect_and_grad, expect_and_forces
 from netket.vqs.mc.common import force_to_grad
@@ -118,6 +120,9 @@ def expect_and_forces_fullsum(
         Ψ,
     )
 
+    norm = jax.tree_util.tree_reduce(lambda x, y: x + jnp.linalg.norm(y), Ō_grad, 0)
+    print("Outer norm:", norm)
+
     if mutable is not False:
         vstate.model_state = new_model_state
 
@@ -141,6 +146,12 @@ def _exp_forces(
 
     ΔOΨ = (OΨ - expval_O * Ψ).conj() * Ψ
 
+    σ = split_array_mpi(σ)
+    ΔOΨ = split_array_mpi(ΔOΨ)
+
+    print("DeltaO", ΔOΨ.shape)
+    print("Sigma", σ.shape)
+
     _, vjp_fun, *new_model_state = nkjax.vjp(
         lambda w: model_apply_fun({"params": w, **model_state}, σ, mutable=mutable),
         parameters,
@@ -148,7 +159,16 @@ def _exp_forces(
         has_aux=is_mutable,
     )
 
-    Ō_grad = vjp_fun(ΔOΨ)[0]
+    Ō_grad_local = vjp_fun(ΔOΨ)[0]
+    Ō_grad = jax.tree_map(
+        lambda x: jnp.sum(mpi.mpi_allgather_jax(x)[0], axis=0), Ō_grad_local
+    )
+
+    print(Ō_grad)
+    norm = jax.tree_util.tree_reduce(lambda x, y: x + jnp.linalg.norm(y), Ō_grad, 0)
+    print(norm)
+    print(jax.tree_map(lambda x: x.shape, Ō_grad_local))
+    print(jax.tree_map(lambda x: x.shape, Ō_grad))
 
     new_model_state = new_model_state[0] if is_mutable else None
 
