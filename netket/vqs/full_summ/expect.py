@@ -110,18 +110,36 @@ def expect_and_forces_fullsum(
     Ψ = vstate.to_array()
     OΨ = O @ Ψ
 
-    expval_O, Ō_grad, new_model_state = _exp_forces(
+    Ψ = split_array_mpi(Ψ)
+    OΨ = split_array_mpi(OΨ)
+    expval_O = (Ψ.conj() * OΨ).sum()
+    expval_O = mpi.mpi_sum_jax(expval_O)[0]
+
+    variance = jnp.sum(jnp.abs(OΨ - expval_O * Ψ) ** 2)
+    variance = mpi.mpi_sum_jax(variance)[0]
+
+    σ = split_array_mpi(vstate._all_states)
+
+    Ō_grad_local, new_model_state = _forces(
         vstate._apply_fun,
         mutable,
         vstate.parameters,
         vstate.model_state,
-        vstate._all_states,
+        σ,
         OΨ,
         Ψ,
+        expval_O,
     )
 
-    norm = jax.tree_util.tree_reduce(lambda x, y: x + jnp.linalg.norm(y), Ō_grad, 0)
-    print("Outer norm:", norm)
+    Ō_grad = jax.tree_map(
+        lambda x: jnp.sum(mpi.mpi_allgather_jax(x)[0], axis=0), Ō_grad_local
+    )
+
+    # print(Ō_grad)
+    # norm = jax.tree_util.tree_reduce(lambda x, y: x + jnp.linalg.norm(y), Ō_grad, 0)
+    # print(norm)
+    # print(jax.tree_map(lambda x: x.shape, Ō_grad_local))
+    # print(jax.tree_map(lambda x: x.shape, Ō_grad))
 
     if mutable is not False:
         vstate.model_state = new_model_state
@@ -130,7 +148,7 @@ def expect_and_forces_fullsum(
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _exp_forces(
+def _forces(
     model_apply_fun: Callable,
     mutable: CollectionFilter,
     parameters: PyTree,
@@ -138,19 +156,14 @@ def _exp_forces(
     σ: jnp.ndarray,
     OΨ: jnp.ndarray,
     Ψ: jnp.ndarray,
+    expval_O: complex,
 ) -> tuple[PyTree, PyTree]:
     is_mutable = mutable is not False
 
-    expval_O = (Ψ.conj() * OΨ).sum()
-    variance = jnp.sum(jnp.abs(OΨ - expval_O * Ψ) ** 2)
-
     ΔOΨ = (OΨ - expval_O * Ψ).conj() * Ψ
 
-    σ = split_array_mpi(σ)
-    ΔOΨ = split_array_mpi(ΔOΨ)
-
-    print("DeltaO", ΔOΨ.shape)
-    print("Sigma", σ.shape)
+    # print("DeltaO", ΔOΨ.shape)
+    # print("Sigma", σ.shape)
 
     _, vjp_fun, *new_model_state = nkjax.vjp(
         lambda w: model_apply_fun({"params": w, **model_state}, σ, mutable=mutable),
@@ -160,20 +173,10 @@ def _exp_forces(
     )
 
     Ō_grad_local = vjp_fun(ΔOΨ)[0]
-    Ō_grad = jax.tree_map(
-        lambda x: jnp.sum(mpi.mpi_allgather_jax(x)[0], axis=0), Ō_grad_local
-    )
-
-    print(Ō_grad)
-    norm = jax.tree_util.tree_reduce(lambda x, y: x + jnp.linalg.norm(y), Ō_grad, 0)
-    print(norm)
-    print(jax.tree_map(lambda x: x.shape, Ō_grad_local))
-    print(jax.tree_map(lambda x: x.shape, Ō_grad))
 
     new_model_state = new_model_state[0] if is_mutable else None
 
     return (
-        Stats(mean=expval_O, error_of_mean=0.0, variance=variance),
-        Ō_grad,
+        Ō_grad_local,
         new_model_state,
     )
