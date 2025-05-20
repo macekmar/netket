@@ -14,7 +14,6 @@
 
 from collections.abc import Callable
 
-import jax
 import jax.numpy as jnp
 
 from netket.utils.numbers import dtype as _dtype
@@ -341,30 +340,21 @@ class Integrator(struct.Pytree, mutable=True):
         # accept the time step iff it is accepted by all MPI processes
         accept_step, _ = mpi_all_jax(accept_step)
 
-        return jax.lax.cond(
-            accept_step,
-            # step accepted
-            lambda _: state.replace(
+        if accept_step:
+            return state.replace(
                 step_no=state.step_no + 1,
                 step_no_total=state.step_no_total + 1,
                 y=y_tp1,
                 t=state.t + actual_dt,
-                dt=jax.lax.cond(
-                    actual_dt == state.dt,
-                    lambda _: next_dt,
-                    lambda _: state.dt,
-                    None,
-                ),
+                dt=next_dt if actual_dt == state.dt else state.dt,
                 last_norm=norm_y.astype(state.last_norm.dtype),
                 last_scaled_error=scaled_err.astype(state.last_scaled_error.dtype),
                 solver_state=solver_state,
                 flags=flags | IntegratorFlags.INFO_STEP_ACCEPTED,
-            ),
-            # step rejected, repeat with lower dt
-            lambda _: state.replace(
+            )
+        else:
+            return state.replace(
                 step_no_total=state.step_no_total + 1,
                 dt=next_dt,
                 flags=flags,
-            ),
-            state,
-        )
+            )
